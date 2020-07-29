@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: custom-scheduler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: custom-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: custom-scheduler
+    namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-addon: scheduler.addons.k8s.io
+  name: custom-scheduler
+  namespace: kube-system
+data:
+  policy.cfg: |-
+    {
+      "kind" : "Policy",
+      "apiVersion" : "v1",
+      "predicates" : [
+        {"name" : "PodFitsPorts"},
+        {"name" : "PodFitsResources"},
+        {"name" : "NoDiskConflict"},
+        {"name" : "MatchNodeSelector"},
+        {"name" : "HostName"}
+        ],
+      "priorities" : [
+        {"name" : "MostRequestedPriority", "weight" : 1},
+        {"name" : "EqualPriority", "weight" : 1}
+        ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: scheduler
+  name: custom-scheduler
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: scheduler
+    spec:
+      serviceAccountName: custom-scheduler
+      containers:
+        - command:
+            - /usr/local/bin/kube-scheduler
+            - --address=0.0.0.0
+            - --leader-elect=false
+            - --scheduler-name=custom-scheduler
+            - --policy-configmap=custom-scheduler
+            - --v=4
+          image: k8s.gcr.io/kube-scheduler:v1.15.4
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10251
+            initialDelaySeconds: 15
+          name: custom-scheduler
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10251
+          resources:
+            requests:
+              cpu: "0.1"
+          securityContext:
+            privileged: false
+          volumeMounts: []
+      hostNetwork: false
+      hostPID: false
+      volumes: []
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: custom-scheduler-mutating-webhook
+webhooks:
+  - admissionReviewVersions:
+      - v1beta1
+    clientConfig:
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUZ2ekNDQTZlZ0F3SUJBZ0lKQUpLL1kvWkZaeUdzTUEwR0NTcUdTSWIzRFFFQkN3VUFNSFl4Q3pBSkJnTlYKQkFZVEFrRlZNUTh3RFFZRFZRUUlEQVpUZVdSdVpYa3hEekFOQmdOVkJBY01CbE41Wkc1bGVURVBNQTBHQTFVRQpDZ3dHYlhrdGIzSm5NUll3RkFZRFZRUUxEQTF0ZVMxa1pYQmhjblJ0Wlc1ME1Sd3dHZ1lEVlFRRERCTjNaV0pvCmIyOXJMbmRsWW1odmIyc3VjM1pqTUI0WERUSXdNRGN5T1RBd01EZzBOMW9YRFRJeE1EY3lPVEF3TURnME4xb3cKZGpFTE1Ba0dBMVVFQmhNQ1FWVXhEekFOQmdOVkJBZ01CbE41Wkc1bGVURVBNQTBHQTFVRUJ3d0dVM2xrYm1WNQpNUTh3RFFZRFZRUUtEQVp0ZVMxdmNtY3hGakFVQmdOVkJBc01EVzE1TFdSbGNHRnlkRzFsYm5ReEhEQWFCZ05WCkJBTU1FM2RsWW1odmIyc3VkMlZpYUc5dmF5NXpkbU13Z2dJaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQ0R3QXcKZ2dJS0FvSUNBUURGNkU4K0V0ZjcxT3ZUQUVrdXFIc0t1YmJQMW9GRzZPNEZFNFNtMjg1OWNEL1pUS1dQelR1WgpQTjAydWVsdGpwaTVVaVBoYWEwdlFpdjFvdkx0bWRYVG9JMjJaME9pdmVXRnlnQTJnejVvN2xVYUtjN280Ujc3CmwwNlg2dmxxVUxZMTRYUGRseWorcWNnSlJNMTY2aGowLzdjU0Fadm4zVy9jNDBraTJYeTNZQm5vUUVZS0ZDNDUKTjdvVEFKVjJycVlNTEdVUnlGODZTRmNIYktDQzB0M1g5b0NiR2cyUFAwRmwyTERVNzkvRXZtdytWZXlwQ3oycQpPVnlQbFYzdkhrOVQrc2dDMys1bWYrY202YWg4Q2hNemN0cWZ5eGFodE80TEdtakxDTjA2UlRyUUpnRGEyVks4Ck9EbWlHamgzQ244Z0xTTndENGlBMEtPd1VZWFpJMncvTm1SYm5wTHQ4cW1tV1diMmxVSEsxKzRQWE0ydVROc3oKbm5LdTFyNUp5MGRRT2Y3RXVjWENGRlFxZnV3OThoTmhSSFh0QUJ6MkJOSUFMQit6aWZscDhjSnFSNUt6ZnYwdwp3b2N3L05hYTdBMHdCbnFsRkhiWjNTTWRySkx3NjNxNGJEVXY4RnN2UndvNVFtelRUT1BJc3NybGE1MUxTWG1uCmhkeTF6NnNmajU1VlNXZ0dMSFBPRm1wUkFZdmNmdENZUHVEZklvU1l1UFd3eGFmbzl2M21YWUQzMm1GYnJNeWQKKzBlUWhIUUtHNytmYm5kN2VtKzJ0dUFhRlh0bDVlR3o4elpneXhsM2VXREFEU1AxMXd1bWNaM1pyMUtqTEphZQpKN05udHlzYWw2cHd2UWswNythcnZMb3NmdnJ0Zm4rQVpqVGEyNGdxbGJsYVVEOWJ6YnBvR3dJREFRQUJvMUF3ClRqQWRCZ05WSFE0RUZnUVUvZG5PMEJPOGdlU1NlN3c0UkhDZkNoY1hLQVV3SHdZRFZSMGpCQmd3Rm9BVS9kbk8KMEJPOGdlU1NlN3c0UkhDZkNoY1hLQVV3REFZRFZSMFRCQVV3QXdFQi96QU5CZ2txaGtpRzl3MEJBUXNGQUFPQwpBZ0VBWlJ1THJmYzUxVHltd25qb1VXa3FJbEVMMmlpTURIelR0Q1ZialE5cE1nT2QvRFd4T1lWVnpSNGhzbDVuClBBaXdBVXRPU3hsT1BXS1dMNUczQUVkWFlVeFVlZ1c4TjFoMUdIbVVYaU5KdWl3Ykc5Y1F3SlJTVUR1eEx1Y3EKcGJUVGFvRitUQlBpYTFIU0R6MlRDTmdCbmVKTVNsSDlPbnpYVFNnTGZNVWxtQ2hPZmpEK2tpNDQyUTV2dnpEWQppNUl5M2pYVDdLT2ZKMXhWN0ZsMktDOC9USkQ4ekZsT3YwSGdyWkdlV0EyZ1FmOXRnVGlhOWRkSjNIRHlvTGZ1CktlMUI2N3d1a20xanNxYlUyVFU2UkNHY0h6akc3YWpyTHMxRXA0MjZGN0xFTXZ6K2VHWGI2Z3Vad09sZ0lkQmcKaHNJS0RiMXplQWlVVklsQ0FHWE51NGR3eTVqYldIaVNRNGowODdkczJUWG83c0o5ZFJRNnZpQlc4QkI2WERNVgpQSWUyU0NuZFkvU2lxQ0xwL016ODVZaTV3eVdJSWMrVExnZmRJbGF1clN0UXhPK245Z3dxcHhkTW5FZHpsbTl0CjFBWGJ6VXNUOVRMSUlDUVlYcHR6cjQrcW9NM1N0YVNWU0lqZmhubmFmY3h2Z3JpU21iVmVrNU9acjNTd2N0U0oKMnJYMTFZTWUzYU1NK28wNUNuMkhmUWt1Zjhob1lOcTBrODZaZi9mNjhzdk1qbGRqcGM4a3IwMUFkZEJPdmtWcQppT29SeEZnejF2akFTbjRDVU12eWlrRHd1alFBaUdSSFpMWERVMjVuMUNaZEhpT0IxbUlTckxBU2JXR29KUzhQCmRsUGtWbjBZZ1owMUtpRjhTQUJhM2VGZmc0UGlSUmpRMWdPZHVhNTBESVd0TVlzPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg== 
+      service:
+        name: webhook
+        namespace: webhook
+        path: /mutate
+    failurePolicy: Fail
+    name: webhook.webhook.svc
+    rules:
+      - apiGroups:
+          - apps
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+        scope: "*"
+---        
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webhook
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: webhook
+  namespace: webhook
+spec:
+  selector:
+    app: webhook
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 5000
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: webhook
+  namespace: webhook
+  name: webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook
+  template:
+    metadata:
+      labels:
+        app: webhook
+      name: webhook
+    spec:
+      containers:
+        - name: webhook
+          image: raonitimo/webhook
+          readinessProbe:
+            httpGet:
+              path: /status
+              scheme: HTTPS
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status
+              scheme: HTTPS
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
