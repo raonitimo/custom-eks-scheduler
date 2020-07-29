@@ -88,6 +88,7 @@ spec:
       hostNetwork: false
       hostPID: false
       volumes: []
+---
 apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
@@ -120,8 +121,8 @@ kind: Namespace
 metadata:
   name: webhook
 ---
-kind: Service
 apiVersion: v1
+kind: Service
 metadata:
   name: webhook
   namespace: webhook
