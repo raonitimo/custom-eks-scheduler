@@ -102,7 +102,7 @@ webhooks:
         name: webhook
         namespace: webhook
         path: /mutate
-    failurePolicy: Fail
+    failurePolicy: Ignore
     name: webhook.webhook.svc
     rules:
       - apiGroups:
